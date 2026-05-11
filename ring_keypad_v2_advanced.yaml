@@ -1,0 +1,610 @@
+blueprint:
+  name: Ring Keypad V2 with Alarmo & Environmentals
+  description: >
+    Synchronizes a Ring Keypad V2 with Alarmo. Includes custom functionality to 
+    trigger the keypad's fire/smoke alarm, CO alarm, flash the medical warning 
+    light if the burglar alarm was triggered while you were away, map custom 
+    actions to physical buttons, and protect against brute-force code guessing.
+  domain: automation
+  input:
+    keypad:
+      name: Ring Keypad Device
+      description: The Z-Wave device for your Ring Keypad V2. (MUST be paired with S2 Security!)
+      selector:
+        device:
+          integration: zwave_js
+    alarm:
+      name: Alarmo Entity
+      description: Your Alarmo control panel entity.
+      selector:
+        entity:
+          domain: alarm_control_panel
+    environmental_sensors:
+      name: Environmental Sensors (Optional)
+      description: Select your smoke, carbon monoxide, moisture/water, gas, or heat detectors. If any of these trigger, the keypad will sound the loud fire alarm.
+      default: []
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class:
+            - smoke
+            - carbon_monoxide
+            - moisture
+            - gas
+            - heat
+          multiple: true
+          
+    # --- Security Setup ---
+    brute_force_toggle:
+      name: Brute Force Protection (Invalid Codes)
+      description: Trigger the burglar alarm if too many incorrect codes are entered while the system is Armed.
+      default: false
+      selector:
+        boolean: {}
+    failed_code_counter:
+      name: Failed Code Counter Helper
+      description: Create a Helper (Settings > Devices & Services > Helpers > Create Helper > Counter) and select it here. Required if Brute Force Protection is on.
+      default: ""
+      selector:
+        entity:
+          domain: counter
+    max_failed_attempts:
+      name: Max Failed Attempts
+      description: How many wrong codes before the alarm triggers?
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 10
+          step: 1
+          
+    # --- Fire Button Setup ---
+    fire_button_local_alarm:
+      name: Local Siren for Fire Button
+      description: Toggle to activate the keypad's internal loud Fire siren when the Fire button is held.
+      default: false
+      selector:
+        boolean: {}
+    fire_button_action:
+      name: Fire Button Action
+      description: Custom Home Assistant actions to run when the Fire button is held.
+      default: []
+      selector:
+        action: {}
+        
+    # --- Police Button Setup ---
+    police_button_local_alarm:
+      name: Local Siren for Police Button
+      description: Toggle to activate the keypad's internal loud Burglar siren when the Police button is held.
+      default: false
+      selector:
+        boolean: {}
+    police_button_action:
+      name: Police Button Action
+      description: Custom Home Assistant actions to run when the Police button is held.
+      default: []
+      selector:
+        action: {}
+        
+    # --- Medical Button Setup ---
+    medical_button_local_alarm:
+      name: Local Flashing for Medical Button
+      description: Toggle to activate the keypad's internal Medical flashing light when the Medical button is held.
+      default: false
+      selector:
+        boolean: {}
+    medical_button_action:
+      name: Medical Button Action
+      description: Custom Home Assistant actions to run when the Medical button is held.
+      default: []
+      selector:
+        action: {}
+
+mode: parallel
+max: 10
+trace:
+  stored_traces: 0
+
+variables:
+  alarm_entity: !input alarm
+  environmental_entities: !input environmental_sensors
+  fire_local: !input fire_button_local_alarm
+  police_local: !input police_button_local_alarm
+  medical_local: !input medical_button_local_alarm
+  brute_force: !input brute_force_toggle
+  counter_entity: !input failed_code_counter
+  max_attempts: !input max_failed_attempts
+  formatted_delay: >
+    {% set delay = state_attr(alarm_entity, 'delay') %} 
+    {% set total_seconds = delay if delay is not none else 0 %} 
+    {% set minutes = total_seconds // 60 %} 
+    {% set seconds = total_seconds % 60 %} 
+    {{ minutes }}m{{ seconds }}s
+
+triggers:
+  - trigger: event
+    event_type: zwave_js_notification
+    event_data:
+      command_class: 111
+      device_id: !input keypad
+      event_type: 2
+    id: code_entered
+  - trigger: event
+    event_type: zwave_js_notification
+    event_data:
+      command_class: 111
+      device_id: !input keypad
+      event_type: 3
+    id: keypad_disarm
+  - trigger: event
+    event_type: zwave_js_notification
+    event_data:
+      command_class: 111
+      device_id: !input keypad
+      event_type: 5
+    id: keypad_arm_away
+  - trigger: event
+    event_type: zwave_js_notification
+    event_data:
+      command_class: 111
+      device_id: !input keypad
+      event_type: 6
+    id: keypad_arm_home
+  - trigger: event
+    event_type: zwave_js_notification
+    event_data:
+      command_class: 111
+      device_id: !input keypad
+      event_type: 16
+    id: keypad_fire
+  - trigger: event
+    event_type: zwave_js_notification
+    event_data:
+      command_class: 111
+      device_id: !input keypad
+      event_type: 17
+    id: keypad_police
+  - trigger: event
+    event_type: zwave_js_notification
+    event_data:
+      command_class: 111
+      device_id: !input keypad
+      event_type: 19
+    id: keypad_medical
+  - trigger: event
+    event_type: alarmo_failed_to_arm
+    event_data:
+      reason: invalid_code
+    id: invalid_code
+  - trigger: event
+    event_type: alarmo_failed_to_arm
+    event_data:
+      reason: open_sensors
+    id: need_bypass
+    
+  - trigger: state
+    entity_id: !input alarm
+    id: alarmo_state_change
+    
+  - trigger: template
+    value_template: >
+      {{ expand(environmental_entities) | selectattr('state', 'eq', 'on') | list | length > 0 if environmental_entities else false }}
+    id: environmental_triggered
+
+conditions:
+  - condition: or
+    conditions:
+      - condition: template
+        value_template: "{{ trigger.platform == 'event' }}" 
+      - condition: and
+        conditions:
+          - condition: template
+            value_template: "{{ trigger.platform == 'state' }}"
+          - condition: template
+            value_template: "{{ trigger.from_state is defined and trigger.to_state is defined }}"
+          - condition: template
+            value_template: "{{ trigger.from_state.state != trigger.to_state.state }}" 
+          - condition: template
+            value_template: "{{ trigger.from_state.state != 'unknown' }}"
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id:
+              - code_entered
+              - keypad_disarm
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: state
+                    entity_id: !input alarm
+                    state: "disarmed"
+                sequence:
+                  - action: zwave_js.set_value
+                    target:
+                      device_id: !input keypad
+                    data:
+                      command_class: "135"
+                      endpoint: "0"
+                      property: "2"
+                      property_key: "1"
+                      value: 99
+          - action: alarmo.disarm
+            target:
+              entity_id: !input alarm
+            data:
+              code: |
+                {% if trigger.event.data.event_data != none %}
+                  {{ trigger.event.data.event_data }}
+                {% endif %}
+                
+      - conditions:
+          - condition: and
+            conditions:
+              - condition: or
+                conditions:
+                  - condition: trigger
+                    id: keypad_arm_away
+                  - condition: trigger
+                    id: keypad_arm_home
+              - condition: state
+                entity_id: !input alarm
+                state: disarmed
+        sequence:
+          - action: alarmo.arm
+            target:
+              entity_id: !input alarm
+            data:
+              mode: "{{ trigger.id.split(\"_\")[2] }}"
+              force: false
+              code: |
+                {% if trigger.event.data.event_data != none %}
+                  {{ trigger.event.data.event_data }}
+                {% endif %}
+          - wait_for_trigger:
+              - trigger: event
+                event_type: zwave_js_notification
+                event_data:
+                  command_class: 111
+                  device_id: !input keypad
+                  event_type: 2
+                  event_data: null
+            timeout: "5"
+            continue_on_timeout: false
+          - action: alarmo.arm
+            target:
+              entity_id: !input alarm
+            data:
+              mode: "{{ trigger.id.split(\"_\")[2] }}"
+              force: true
+              code: |
+                {% if trigger.event.data.event_data != none %}
+                  {{ trigger.event.data.event_data }}
+                {% endif %}
+                
+      - conditions:
+          - condition: trigger
+            id: invalid_code
+        sequence:
+          # Flash Red Warning Light
+          - action: zwave_js.set_value
+            target:
+              device_id: !input keypad
+            data:
+              command_class: "135"
+              endpoint: "0"
+              property: "9"
+              property_key: "1"
+              value: 99
+          # Evaluate Brute Force Counter
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: >
+                      {{ brute_force and trigger.event.data.command == 'disarm' and counter_entity != none and counter_entity != '' }}
+                sequence:
+                  - action: counter.increment
+                    target:
+                      entity_id: "{{ counter_entity }}"
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ states(counter_entity) | int(0) >= max_attempts | int(3) }}"
+                        sequence:
+                          - action: alarm_control_panel.alarm_trigger
+                            target:
+                              entity_id: !input alarm
+                          - action: counter.reset
+                            target:
+                              entity_id: "{{ counter_entity }}"
+              
+      - conditions:
+          - condition: trigger
+            id: need_bypass
+        sequence:
+          - action: zwave_js.set_value
+            target:
+              device_id: !input keypad
+            data:
+              command_class: "135"
+              endpoint: "0"
+              property: "16"
+              property_key: "1"
+              value: 99
+
+      - conditions:
+          - condition: trigger
+            id: alarmo_state_change
+        sequence:
+          # --- Reset the Brute Force Counter on any successful arm/disarm ---
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: >
+                      {{ brute_force and counter_entity != none and counter_entity != '' and trigger.to_state.state in ['disarmed', 'armed_home', 'armed_away', 'armed_night', 'armed_custom_bypass'] }}
+                sequence:
+                  - action: counter.reset
+                    target:
+                      entity_id: "{{ counter_entity }}"
+                      
+          - choose:
+              # Disarmed
+              - conditions:
+                  - condition: template
+                    value_template: "{{ trigger.to_state.state == 'disarmed' }}"
+                sequence:
+                  - action: zwave_js.set_value
+                    target:
+                      device_id: !input keypad
+                    data:
+                      command_class: "135"
+                      endpoint: "0"
+                      property: "2"
+                      property_key: "1"
+                      value: 99
+                      
+              # Armed Away
+              - conditions:
+                  - condition: template
+                    value_template: "{{ trigger.to_state.state == 'armed_away' }}"
+                sequence:
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ trigger.from_state is defined and trigger.from_state.state == 'triggered' }}"
+                        sequence:
+                          - action: zwave_js.set_value
+                            target:
+                              device_id: !input keypad
+                            data:
+                              command_class: "135"
+                              endpoint: "0"
+                              property: "11"
+                              property_key: "1"
+                              value: 99
+                          - delay:
+                              seconds: 6
+                          - action: zwave_js.invoke_cc_api
+                            target:
+                              device_id: !input keypad
+                            data:
+                              command_class: '135'
+                              endpoint: '0'
+                              method_name: set
+                              parameters:
+                                - - indicatorId: 19
+                                    propertyId: 1
+                                    value: 255
+                    default:
+                      - action: zwave_js.set_value
+                        target:
+                          device_id: !input keypad
+                        data:
+                          command_class: "135"
+                          endpoint: "0"
+                          property: "11"
+                          property_key: "1"
+                          value: 99
+
+              # Armed Home
+              - conditions:
+                  - condition: template
+                    value_template: "{{ trigger.to_state.state == 'armed_home' }}"
+                sequence:
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ trigger.from_state is defined and trigger.from_state.state == 'triggered' }}"
+                        sequence:
+                          - action: zwave_js.set_value
+                            target:
+                              device_id: !input keypad
+                            data:
+                              command_class: "135"
+                              endpoint: "0"
+                              property: "10"
+                              property_key: "1"
+                              value: 99
+                          - delay:
+                              seconds: 6
+                          - action: zwave_js.invoke_cc_api
+                            target:
+                              device_id: !input keypad
+                            data:
+                              command_class: '135'
+                              endpoint: '0'
+                              method_name: set
+                              parameters:
+                                - - indicatorId: 19
+                                    propertyId: 1
+                                    value: 255
+                    default:
+                      - action: zwave_js.set_value
+                        target:
+                          device_id: !input keypad
+                        data:
+                          command_class: "135"
+                          endpoint: "0"
+                          property: "10"
+                          property_key: "1"
+                          value: 99
+
+              # Arming
+              - conditions:
+                  - condition: template
+                    value_template: "{{ trigger.to_state.state == 'arming' }}"
+                sequence:
+                  - action: zwave_js.set_value
+                    target:
+                      device_id: !input keypad
+                    data:
+                      command_class: "135"
+                      endpoint: "0"
+                      property: "18"
+                      property_key: timeout
+                      value: "{{ formatted_delay }}"
+
+              # Pending
+              - conditions:
+                  - condition: template
+                    value_template: "{{ trigger.to_state.state == 'pending' }}"
+                sequence:
+                  - action: zwave_js.set_value
+                    target:
+                      device_id: !input keypad
+                    data:
+                      command_class: "135"
+                      endpoint: "0"
+                      property: "17"
+                      property_key: timeout
+                      value: "{{ formatted_delay }}"
+                      
+              # Triggered (Burglar mode)
+              - conditions:
+                  - condition: template
+                    value_template: "{{ trigger.to_state.state == 'triggered' }}"
+                  - condition: template
+                    value_template: >
+                      {{ expand(environmental_entities) | selectattr('state', 'eq', 'on') | list | length == 0 if environmental_entities else true }}
+                sequence:
+                  - action: zwave_js.invoke_cc_api
+                    target:
+                      device_id: !input keypad
+                    data:
+                      command_class: '135'
+                      endpoint: '0'
+                      method_name: set
+                      parameters:
+                        - - indicatorId: 13
+                            propertyId: 1
+                            value: 255
+
+      # --- Environmental Alarms ---
+      - conditions:
+          - condition: trigger
+            id: environmental_triggered
+        sequence:
+          - action: zwave_js.invoke_cc_api
+            target:
+              device_id: !input keypad
+            data:
+              command_class: '135'
+              endpoint: '0'
+              method_name: set
+              parameters:
+                - - indicatorId: 14
+                    propertyId: 1
+                    value: 255
+
+      # --- Physical Emergency Buttons ---
+      
+      # FIRE BUTTON
+      - conditions:
+          - condition: trigger
+            id: keypad_fire
+          - condition: template
+            value_template: >
+              {{ states(alarm_entity) not in ['pending', 'triggered'] }}
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ fire_local }}"
+                sequence:
+                  - action: zwave_js.invoke_cc_api
+                    target:
+                      device_id: !input keypad
+                    data:
+                      command_class: '135'
+                      endpoint: '0'
+                      method_name: set
+                      parameters:
+                        - - indicatorId: 14
+                            propertyId: 1
+                            value: 255
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "true"
+                sequence: !input fire_button_action
+
+      # POLICE BUTTON
+      - conditions:
+          - condition: trigger
+            id: keypad_police
+          - condition: template
+            value_template: >
+              {{ states(alarm_entity) not in ['pending', 'triggered'] }}
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ police_local }}"
+                sequence:
+                  - action: zwave_js.invoke_cc_api
+                    target:
+                      device_id: !input keypad
+                    data:
+                      command_class: '135'
+                      endpoint: '0'
+                      method_name: set
+                      parameters:
+                        - - indicatorId: 13
+                            propertyId: 1
+                            value: 255
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "true"
+                sequence: !input police_button_action
+
+      # MEDICAL BUTTON
+      - conditions:
+          - condition: trigger
+            id: keypad_medical
+          - condition: template
+            value_template: >
+              {{ states(alarm_entity) not in ['pending', 'triggered'] }}
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ medical_local }}"
+                sequence:
+                  - action: zwave_js.invoke_cc_api
+                    target:
+                      device_id: !input keypad
+                    data:
+                      command_class: '135'
+                      endpoint: '0'
+                      method_name: set
+                      parameters:
+                        - - indicatorId: 19
+                            propertyId: 1
+                            value: 255
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "true"
+                sequence: !input medical_button_action
