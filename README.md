@@ -35,7 +35,10 @@ If you prefer to install it manually:
 
 ## 🔒 Setting up Brute Force Protection (Optional)
 To enable the feature that triggers the alarm after too many failed PIN attempts, you need to create a simple Counter Helper in Home Assistant:
-1. Go to **Settings** -> **Devices & Services** -> **Helpers**.
+1. Go to **Settings** -> **Devices & Services** -> **Helpers** or click the helpers button below.
+
+[![Open your Home Assistant instance and show your helper entities.](https://my.home-assistant.io/badges/helpers.svg)](https://my.home-assistant.io/redirect/helpers/)
+
 2. Click **+ Create Helper** and select **Counter**.
 3. Name it something like "Keypad Failed Attempts" and leave the rest as default.
 4. When setting up this blueprint, toggle "Brute Force Protection" to true, select your newly created Counter entity, and choose your maximum allowed attempts.
