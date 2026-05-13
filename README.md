@@ -54,7 +54,7 @@ The Ring Keypad hardware prioritizes the Burglar siren. To ensure the post-alarm
 To prevent conflicting states, the physical Fire, Police, and Medical buttons are programmed to be ignored if your alarm system is currently in the `pending` (Entry Delay) or `triggered` (Siren Sounding) states.
 
 ### 🐛 Support / Issue Reports
-If you run into a problem or want to report an issue, please open a ticket on GitHub: [GitHub Issues](https://github.com/Ryckie/Ring-Keypad-V2-Advanced-Blueprint/issues)
+If you run into a problem or want to report an issue, please open a ticket on: [GitHub Issues](https://github.com/Ryckie/Ring-Keypad-V2-Advanced-Blueprint/issues)
 
 ### ☕ If You Would Like To Thank Me 🤟
 <a href="https://www.buymeacoffee.com/apradagl9g"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=☕&slug=apradagl9g&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" /></a>
