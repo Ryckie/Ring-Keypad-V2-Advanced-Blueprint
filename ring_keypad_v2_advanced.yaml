@@ -114,12 +114,7 @@ variables:
   brute_force: !input brute_force_toggle
   counter_entity: !input failed_code_counter
   max_attempts: !input max_failed_attempts
-  formatted_delay: >
-    {% set delay = state_attr(alarm_entity, 'delay') %} 
-    {% set total_seconds = delay if delay is not none else 0 %} 
-    {% set minutes = total_seconds // 60 %} 
-    {% set seconds = total_seconds % 60 %} 
-    {{ minutes }}m{{ seconds }}s
+  delay_in_seconds: "{{ state_attr(alarm_entity, 'delay') }}"
 
 triggers:
   - trigger: event
@@ -462,8 +457,8 @@ actions:
                       command_class: "135"
                       endpoint: "0"
                       property: "18"
-                      property_key: timeout
-                      value: "{{ formatted_delay }}"
+                      property_key: "7"
+                      value: "{{ delay_in_seconds }}"
 
               # Pending
               - conditions:
@@ -477,9 +472,9 @@ actions:
                       command_class: "135"
                       endpoint: "0"
                       property: "17"
-                      property_key: timeout
-                      value: "{{ formatted_delay }}"
-                      
+                      property_key: "7"
+                      value: "{{ delay_in_seconds }}"
+
               # Triggered (Burglar mode)
               - conditions:
                   - condition: template
