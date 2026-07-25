@@ -13,6 +13,38 @@ blueprint:
       selector:
         device:
           integration: zwave_js
+    keypad_arm_home_mapping:
+      name: 'Ring Keypad: "Arm Home" button'
+      description: The <a href="https://github.com/nielsfaber/alarmo#arm-modes">Alarmo mode</a> this keypad button maps to.
+      selector:
+        select:
+          options:
+            - label: Home
+              value: home
+            - label: Away
+              value: away
+            - label: Night
+              value: night
+            - label: Vacation
+              value: vacation
+            - label: Custom
+              value: custom
+    keypad_arm_away_mapping:
+      name: 'Ring Keypad: "Arm Away" button'
+      description: The <a href="https://github.com/nielsfaber/alarmo#arm-modes">Alarmo mode</a> this keypad button maps to.
+      selector:
+        select:
+          options:
+            - label: Home
+              value: home
+            - label: Away
+              value: away
+            - label: Night
+              value: night
+            - label: Vacation
+              value: vacation
+            - label: Custom
+              value: custom
     alarm:
       name: Alarmo Entity
       description: Your Alarmo control panel entity.
@@ -33,7 +65,7 @@ blueprint:
             - gas
             - heat
           multiple: true
-          
+
     # --- Security Setup ---
     brute_force_toggle:
       name: Brute Force Protection (Invalid Codes)
@@ -57,7 +89,7 @@ blueprint:
           min: 1
           max: 10
           step: 1
-          
+
     # --- Fire Button Setup ---
     fire_button_local_alarm:
       name: Local Siren for Fire Button
@@ -71,7 +103,7 @@ blueprint:
       default: []
       selector:
         action: {}
-        
+
     # --- Police Button Setup ---
     police_button_local_alarm:
       name: Local Siren for Police Button
@@ -85,7 +117,7 @@ blueprint:
       default: []
       selector:
         action: {}
-        
+
     # --- Medical Button Setup ---
     medical_button_local_alarm:
       name: Local Flashing for Medical Button
@@ -106,6 +138,8 @@ trace:
   stored_traces: 0
 
 variables:
+  keypad_arm_home_mapping: !input keypad_arm_home_mapping
+  keypad_arm_away_mapping: !input keypad_arm_away_mapping
   alarm_entity: !input alarm
   environmental_entities: !input environmental_sensors
   fire_local: !input fire_button_local_alarm
@@ -181,11 +215,9 @@ triggers:
     event_data:
       reason: open_sensors
     id: need_bypass
-    
   - trigger: state
     entity_id: !input alarm
     id: alarmo_state_change
-    
   - trigger: template
     value_template: >
       {{ expand(environmental_entities) | selectattr('state', 'eq', 'on') | list | length > 0 if environmental_entities else false }}
@@ -195,7 +227,7 @@ conditions:
   - condition: or
     conditions:
       - condition: template
-        value_template: "{{ trigger.platform == 'event' }}" 
+        value_template: "{{ trigger.platform == 'event' }}"
       - condition: and
         conditions:
           - condition: template
@@ -203,12 +235,13 @@ conditions:
           - condition: template
             value_template: "{{ trigger.from_state is defined and trigger.to_state is defined }}"
           - condition: template
-            value_template: "{{ trigger.from_state.state != trigger.to_state.state }}" 
+            value_template: "{{ trigger.from_state.state != trigger.to_state.state }}"
           - condition: template
             value_template: "{{ trigger.from_state.state != 'unknown' }}"
 
 actions:
   - choose:
+      # --- Code Entered / Keypad Disarm pressed ---
       - conditions:
           - condition: trigger
             id:
@@ -238,7 +271,8 @@ actions:
                 {% if trigger.event.data.event_data != none %}
                   {{ trigger.event.data.event_data }}
                 {% endif %}
-                
+
+      # --- Keypad Arm pressed ---
       - conditions:
           - condition: and
             conditions:
@@ -256,7 +290,7 @@ actions:
             target:
               entity_id: !input alarm
             data:
-              mode: "{{ trigger.id.split(\"_\")[2] }}"
+              mode: '{{ iif(trigger.id == "keypad_arm_home", keypad_arm_home_mapping, keypad_arm_away_mapping) }}'
               force: false
               code: |
                 {% if trigger.event.data.event_data != none %}
@@ -276,13 +310,14 @@ actions:
             target:
               entity_id: !input alarm
             data:
-              mode: "{{ trigger.id.split(\"_\")[2] }}"
+              mode: '{{ iif(trigger.id == "keypad_arm_home", keypad_arm_home_mapping, keypad_arm_away_mapping) }}'
               force: true
               code: |
                 {% if trigger.event.data.event_data != none %}
                   {{ trigger.event.data.event_data }}
                 {% endif %}
-                
+
+      # --- Invalid Code ---
       - conditions:
           - condition: trigger
             id: invalid_code
@@ -318,7 +353,8 @@ actions:
                           - action: counter.reset
                             target:
                               entity_id: "{{ counter_entity }}"
-              
+
+      # --- Sensors require bypass ---
       - conditions:
           - condition: trigger
             id: need_bypass
@@ -333,6 +369,7 @@ actions:
               property_key: "1"
               value: 99
 
+      # --- Alarmo State Change ---
       - conditions:
           - condition: trigger
             id: alarmo_state_change
@@ -342,12 +379,12 @@ actions:
               - conditions:
                   - condition: template
                     value_template: >
-                      {{ brute_force and counter_entity != none and counter_entity != '' and trigger.to_state.state in ['disarmed', 'armed_home', 'armed_away', 'armed_night', 'armed_custom_bypass'] }}
+                      {{ brute_force and counter_entity != none and counter_entity != '' and trigger.to_state.state in ['disarmed', 'armed_home', 'armed_away', 'armed_night', 'armed_vacation', 'armed_custom_bypass'] }}
                 sequence:
                   - action: counter.reset
                     target:
                       entity_id: "{{ counter_entity }}"
-                      
+
           - choose:
               # Disarmed
               - conditions:
@@ -363,55 +400,14 @@ actions:
                       property: "2"
                       property_key: "1"
                       value: 99
-                      
-              # Armed Away
-              - conditions:
-                  - condition: template
-                    value_template: "{{ trigger.to_state.state == 'armed_away' }}"
-                sequence:
-                  - choose:
-                      - conditions:
-                          - condition: template
-                            value_template: "{{ trigger.from_state is defined and trigger.from_state.state == 'triggered' }}"
-                        sequence:
-                          - action: zwave_js.set_value
-                            target:
-                              device_id: !input keypad
-                            data:
-                              command_class: "135"
-                              endpoint: "0"
-                              property: "11"
-                              property_key: "1"
-                              value: 99
-                          - delay:
-                              seconds: 6
-                          - action: zwave_js.invoke_cc_api
-                            target:
-                              device_id: !input keypad
-                            data:
-                              command_class: '135'
-                              endpoint: '0'
-                              method_name: set
-                              parameters:
-                                - - indicatorId: 19
-                                    propertyId: 1
-                                    value: 255
-                    default:
-                      - action: zwave_js.set_value
-                        target:
-                          device_id: !input keypad
-                        data:
-                          command_class: "135"
-                          endpoint: "0"
-                          property: "11"
-                          property_key: "1"
-                          value: 99
 
-              # Armed Home
+              # Armed Home or Armed Away (based on mapping)
               - conditions:
                   - condition: template
-                    value_template: "{{ trigger.to_state.state == 'armed_home' }}"
+                    value_template: "{{ trigger.to_state.state in ['armed_home', 'armed_away', 'armed_night', 'armed_vacation', 'armed_custom_bypass'] and trigger.to_state.state.split('_')[1] in [keypad_arm_home_mapping, keypad_arm_away_mapping] }}"
                 sequence:
+                  - variables:
+                      property_home_away: "{{ iif(trigger.to_state.state.split('_')[1] == keypad_arm_home_mapping, 10, 11) }}"
                   - choose:
                       - conditions:
                           - condition: template
@@ -423,7 +419,7 @@ actions:
                             data:
                               command_class: "135"
                               endpoint: "0"
-                              property: "10"
+                              property: "{{ property_home_away }}"
                               property_key: "1"
                               value: 99
                           - delay:
@@ -432,8 +428,8 @@ actions:
                             target:
                               device_id: !input keypad
                             data:
-                              command_class: '135'
-                              endpoint: '0'
+                              command_class: "135"
+                              endpoint: "0"
                               method_name: set
                               parameters:
                                 - - indicatorId: 19
@@ -446,7 +442,7 @@ actions:
                         data:
                           command_class: "135"
                           endpoint: "0"
-                          property: "10"
+                          property: "{{ property_home_away }}"
                           property_key: "1"
                           value: 99
 
@@ -479,7 +475,7 @@ actions:
                       property: "17"
                       property_key: timeout
                       value: "{{ formatted_delay }}"
-                      
+
               # Triggered (Burglar mode)
               - conditions:
                   - condition: template
@@ -492,8 +488,8 @@ actions:
                     target:
                       device_id: !input keypad
                     data:
-                      command_class: '135'
-                      endpoint: '0'
+                      command_class: "135"
+                      endpoint: "0"
                       method_name: set
                       parameters:
                         - - indicatorId: 13
@@ -509,8 +505,8 @@ actions:
             target:
               device_id: !input keypad
             data:
-              command_class: '135'
-              endpoint: '0'
+              command_class: "135"
+              endpoint: "0"
               method_name: set
               parameters:
                 - - indicatorId: 14
@@ -518,7 +514,7 @@ actions:
                     value: 255
 
       # --- Physical Emergency Buttons ---
-      
+
       # FIRE BUTTON
       - conditions:
           - condition: trigger
@@ -536,8 +532,8 @@ actions:
                     target:
                       device_id: !input keypad
                     data:
-                      command_class: '135'
-                      endpoint: '0'
+                      command_class: "135"
+                      endpoint: "0"
                       method_name: set
                       parameters:
                         - - indicatorId: 14
@@ -566,8 +562,8 @@ actions:
                     target:
                       device_id: !input keypad
                     data:
-                      command_class: '135'
-                      endpoint: '0'
+                      command_class: "135"
+                      endpoint: "0"
                       method_name: set
                       parameters:
                         - - indicatorId: 13
@@ -596,8 +592,8 @@ actions:
                     target:
                       device_id: !input keypad
                     data:
-                      command_class: '135'
-                      endpoint: '0'
+                      command_class: "135"
+                      endpoint: "0"
                       method_name: set
                       parameters:
                         - - indicatorId: 19
