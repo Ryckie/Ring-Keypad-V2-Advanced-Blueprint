@@ -1,5 +1,7 @@
 blueprint:
   name: Ring Keypad V2 with Alarmo & Environmentals
+  author: Ryckie
+  source_url: https://github.com/Ryckie/Ring-Keypad-V2-Advanced-Blueprint/blob/main/ring_keypad_v2_advanced.yaml
   description: >
     Synchronizes a Ring Keypad V2 with Alarmo. Includes custom functionality to 
     trigger the keypad's fire/smoke alarm, CO alarm, flash the medical warning 
