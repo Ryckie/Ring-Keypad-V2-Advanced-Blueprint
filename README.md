@@ -4,6 +4,8 @@ This blueprint synchronizes a Ring Keypad V2 with Home Assistant and Alarmo. It 
 
 ## ✨ Features
 * **Full Alarmo Sync:** Perfectly syncs Armed, Disarmed, Arming (Exit Delay), and Pending (Entry Delay) states.
+* **Custom Alarmo Mode Mapping:** You can independently map the keypad's physical "Arm Home" and "Arm Away" buttons to specific Alarmo modes, including Home, Away, Night, Vacation, or Custom.
+* **S2 Security Collision Workaround:** Includes a customizable delay toggle (0-3 seconds) to prevent the Z-Wave race condition (#4879) that causes the keypad to flash a red network error and fail to update its status when disarming.
 * **Bypasses Z-Wave JS Limits:** Uses raw `invoke_cc_api` commands to bypass Home Assistant's strict indicator filters, ensuring all special alarms actually work.
 * **Environmental Alarms (Optional):** Connect your environmental sensors (Smoke, CO, Moisture, Gas, Heat). If any of these trigger, the keypad will sound the loud, permanent Fire/CO siren until disarmed. You can leave this blank if you don't have any, and the blueprint will still work perfectly.
 * **Smart "Post-Alarm" Warning:** If your burglar alarm triggers while you are away, the siren will sound. When the alarm times out and re-arms itself (make sure this is enabled in Alarmo), the keypad will flash the **Medical button** as a silent warning/indicator. When you come home, you instantly know an incident occurred before you even enter your code!
@@ -57,4 +59,4 @@ To prevent conflicting states, the physical Fire, Police, and Medical buttons ar
 If you run into a problem or want to report an issue, please open a ticket on: [GitHub Issues](https://github.com/Ryckie/Ring-Keypad-V2-Advanced-Blueprint/issues)
 
 ### ☕ If You Would Like To Thank Me 🤟
-<a href="https://www.buymeacoffee.com/apradagl9g"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=☕&slug=apradagl9g&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" /></a>
+[![Buy Me A Coffee](https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=apradagl9g&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff)](https://www.buymeacoffee.com/apradagl9g)
