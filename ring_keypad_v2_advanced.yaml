@@ -92,6 +92,19 @@ blueprint:
           max: 10
           step: 1
 
+# --- Workaround for Z-Wave JS S2 collision issue #4 (https://github.com/Ryckie/Ring-Keypad-V2-Advanced-Blueprint/issues/4). ---
+    s2_collision_delay:
+      name: S2 Security Collision Delay (Disarm)
+      description: >
+        If your keypad flashes the red network symbol and fails to update its status when disarming. Adding a delay (1-3 seconds) allows the keypad's S2 security handshake to finish first. 0 disables the delay.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 3
+          step: 1
+          unit_of_measurement: seconds
+
     # --- Fire Button Setup ---
     fire_button_local_alarm:
       name: Local Siren for Fire Button
@@ -150,6 +163,7 @@ variables:
   brute_force: !input brute_force_toggle
   counter_entity: !input failed_code_counter
   max_attempts: !input max_failed_attempts
+  collision_delay: !input s2_collision_delay
   formatted_delay: >
     {% set delay = state_attr(alarm_entity, 'delay') %} 
     {% set total_seconds = delay if delay is not none else 0 %} 
@@ -393,6 +407,8 @@ actions:
                   - condition: template
                     value_template: "{{ trigger.to_state.state == 'disarmed' }}"
                 sequence:
+                  - delay:
+                      seconds: "{{ collision_delay | int(0) }}"
                   - action: zwave_js.set_value
                     target:
                       device_id: !input keypad
