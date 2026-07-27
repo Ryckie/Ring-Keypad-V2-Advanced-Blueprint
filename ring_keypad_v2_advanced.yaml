@@ -149,6 +149,7 @@ blueprint:
 
 mode: parallel
 max: 10
+# Trace logs are deliberately disabled by default to avoid exposing codes, temporarily enable them by setting stored_traces to a positive integer.
 trace:
   stored_traces: 0
 
