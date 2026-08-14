@@ -1,5 +1,5 @@
 blueprint:
-  name: Ring Keypad V2 with Alarmo & Environmentals
+  name: Ring Keypad V2 with Alarmo & Environmentals & Actionable Notifications
   author: Ryckie
   source_url: https://github.com/Ryckie/Ring-Keypad-V2-Advanced-Blueprint/blob/main/ring_keypad_v2_advanced.yaml
   description: >
@@ -7,8 +7,33 @@ blueprint:
     trigger the keypad's fire/smoke alarm, CO alarm, flash the medical warning 
     light if the burglar alarm was triggered while you were away, map custom 
     actions to physical buttons, and protect against brute-force code guessing.
+
+    <details>
+      <summary><b>📱 Menu: Mobile Notifications, Modes & Platform Differences (Click to expand)</b></summary>
+      
+      **Alarm Modes & Android Notification Channels:**
+      *   **Triggered:** Intrusion detected. Uses the `Alarm Triggered` channel.
+      *   **Arming:** Exit delay countdown. Uses the `Alarm Armed` channel.
+      *   **Armed:** System is fully secured (Home, Away, Night, Vacation). Uses the `Alarm Armed` channel.
+      *   **Pending:** Entry delay countdown. Uses the `Alarm Armed` channel.
+      *   **Disarmed:** System is turned off. Uses the `Alarm Disarmed` channel.
+      *   **Open Sensors:** Arming failed due to open sensors. Uses the `Alarm Open Sensors` channel.
+
+      **What is a Channel? (Android Only)**
+      *   A **channel** is a category of notifications. Android allows you to customize the behavior of each channel individually. 
+      *   By navigating to your phone's system settings (**Settings > Apps > Home Assistant > Notifications**), you can manually change the sound, vibration pattern, lock screen visibility, and priority for each specific channel, or disable a specific channel entirely without affecting the others.
+      
+      **Persistent Resend Feature:**
+      *   If a user forcefully dismisses (swipes away) the notification, Home Assistant will detect the clear event and immediately resend the notification to all selected devices.
+      *   *Note: Android reliably reports clear events. iOS is highly restrictive and may occasionally block background apps from reporting notification dismissals.*
+      
+      **Platform Compatibility:**
+      *   **Android:** Fully supports Custom Channels, UI Colors, dynamic Status Icons, and custom Vibration Patterns. Action buttons display instantly beneath the notification.
+      *   **iOS:** Apple ignores Android-specific visual parameters (colors, icons, vibrations). iOS uses `thread-id` and `apns-collapse-id` to group and replace notifications. **Note:** On iOS, you must long-press or pull down the notification to reveal the action buttons.
+    </details>
   domain: automation
   input:
+    # --- Keypad Setup ---
     keypad:
       name: Ring Keypad Device
       description: The Z-Wave device for your Ring Keypad V2. (MUST be paired with S2 Security!)
@@ -68,6 +93,24 @@ blueprint:
             - heat
           multiple: true
 
+    # --- Mobile App Notification Setup ---
+    notify_devices:
+      name: Mobile Devices to Notify (Optional)
+      description: Select one or more mobile app notify entities to receive actionable notifications. Leave empty to disable notifications.
+      default: []
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: notify
+    mobile_alarm_code:
+      name: Mobile Action Disarm Code (Optional)
+      description: The PIN code required to disarm the alarm via the mobile notification action. Leave empty if not required.
+      default: ""
+      selector:
+        text:
+          type: password
+
     # --- Security Setup ---
     brute_force_toggle:
       name: Brute Force Protection (Invalid Codes)
@@ -92,7 +135,25 @@ blueprint:
           max: 10
           step: 1
 
-# --- Workaround for Z-Wave JS S2 collision issue #4 (https://github.com/Ryckie/Ring-Keypad-V2-Advanced-Blueprint/issues/4). ---
+    # --- Auto Force Arm Setup ---
+    auto_force_arm_toggle:
+      name: Auto Force Arm on Open Sensors
+      description: Automatically bypass open sensors and force arm the system if left unresolved.
+      default: false
+      selector:
+        boolean: {}
+    auto_force_arm_delay:
+      name: Auto Force Arm Delay
+      description: How many minutes to wait before automatically force arming? (Only active if toggle above is true)
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 60
+          step: 1
+          unit_of_measurement: minutes
+
+    # --- Workaround for Z-Wave JS S2 collision issue #4 ---
     s2_collision_delay:
       name: S2 Security Collision Delay (Disarm)
       description: >
@@ -149,7 +210,6 @@ blueprint:
 
 mode: parallel
 max: 10
-# Trace logs are deliberately disabled by default to avoid exposing codes, temporarily enable them by setting stored_traces to a positive integer.
 trace:
   stored_traces: 0
 
@@ -158,6 +218,9 @@ variables:
   keypad_arm_away_mapping: !input keypad_arm_away_mapping
   alarm_entity: !input alarm
   environmental_entities: !input environmental_sensors
+  notify_devices: !input notify_devices
+  auto_force_arm: !input auto_force_arm_toggle
+  auto_force_arm_delay: !input auto_force_arm_delay
   fire_local: !input fire_button_local_alarm
   police_local: !input police_button_local_alarm
   medical_local: !input medical_button_local_alarm
@@ -173,6 +236,7 @@ variables:
     {{ minutes }}m{{ seconds }}s
 
 triggers:
+  # --- Keypad Triggers ---
   - trigger: event
     event_type: zwave_js_notification
     event_data:
@@ -234,11 +298,102 @@ triggers:
     id: need_bypass
   - trigger: state
     entity_id: !input alarm
+    to:
+      - disarmed
+      - arming
+      - pending
+      - armed_home
+      - armed_away
+      - armed_night
+      - armed_vacation
+      - armed_custom_bypass
+      - triggered
     id: alarmo_state_change
   - trigger: template
     value_template: >
       {{ expand(environmental_entities) | selectattr('state', 'eq', 'on') | list | length > 0 if environmental_entities else false }}
     id: environmental_triggered
+
+  # --- Mobile App Notification Triggers ---
+  - trigger: event
+    event_type: mobile_app_notification_cleared
+    event_data:
+      tag: alarm_status
+    id: notification_cleared
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: DISARM_ALARM
+    id: action_disarm
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: ARM_ALARM_AWAY
+    id: action_arm_away
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: ARM_ALARM_HOME
+    id: action_arm_home
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: CANCEL_ARM
+    id: action_cancel_arm
+
+  # Force Arm Dynamic Actions
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: FORCE_ARM_AWAY
+    id: action_force_arm
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: FORCE_ARM_HOME
+    id: action_force_arm
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: FORCE_ARM_NIGHT
+    id: action_force_arm
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: FORCE_ARM_VACATION
+    id: action_force_arm
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: FORCE_ARM_CUSTOM_BYPASS
+    id: action_force_arm
+
+  # Retry Arm Dynamic Actions
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: RETRY_ARM_AWAY
+    id: action_retry_arm
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: RETRY_ARM_HOME
+    id: action_retry_arm
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: RETRY_ARM_NIGHT
+    id: action_retry_arm
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: RETRY_ARM_VACATION
+    id: action_retry_arm
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: RETRY_ARM_CUSTOM_BYPASS
+    id: action_retry_arm
 
 conditions:
   - condition: or
@@ -257,6 +412,9 @@ conditions:
             value_template: "{{ trigger.from_state.state != 'unknown' }}"
 
 actions:
+  # ==========================================
+  # BLOCK 1: KEYPAD Z-WAVE & ALARM SYNC LOGIC
+  # ==========================================
   - choose:
       # --- Code Entered / Keypad Disarm pressed ---
       - conditions:
@@ -623,3 +781,447 @@ actions:
                   - condition: template
                     value_template: "true"
                 sequence: !input medical_button_action
+
+  # ==========================================
+  # BLOCK 2: MOBILE APP NOTIFICATIONS & ACTIONS
+  # ==========================================
+  - choose:
+      # --- OPEN SENSORS FAIL TO ARM ---
+      - conditions:
+          - condition: template
+            value_template: "{{ notify_devices is iterable and notify_devices | length > 0 }}"
+          - condition: trigger
+            id:
+              - need_bypass
+              - notification_cleared
+          - condition: template
+            value_template: >-
+              {{ 
+                trigger.id == 'need_bypass' 
+                or 
+                (trigger.id == 'notification_cleared' and 'FORCE_ARM' in trigger.event.data.get('action_1_key', '')) 
+              }}
+        sequence:
+          - repeat:
+              for_each: !input notify_devices
+              sequence:
+                - variables:
+                    cmd: >-
+                      {% if trigger.id == 'need_bypass' %}
+                        {{ trigger.event.data.command | default('arm_away') | replace('arm_', '') | upper }}
+                      {% elif trigger.id == 'notification_cleared' and 'action_1_key' in trigger.event.data %}
+                        {{ trigger.event.data.action_1_key | replace('FORCE_ARM_', '') }}
+                      {% else %}
+                        AWAY
+                      {% endif %}
+                - action: >-
+                    {% if repeat.item.startswith('notify.mobile_app_') %}
+                      {{ repeat.item }}
+                    {% else %}
+                      notify.mobile_app_{{ repeat.item.split('.')[1] }}
+                    {% endif %}
+                  data:
+                    title: "CANNOT ARM: OPEN SENSORS"
+                    message: >
+                      {% if trigger.id == 'notification_cleared' %}
+                        {{ trigger.event.data.message | default('The alarm failed to arm because sensors were open.') }}
+                      {% else %}
+                        {% set sensors = state_attr(alarm_entity, 'open_sensors') %}
+                        {% if sensors %}
+                          The alarm failed to arm because the following sensors are open:
+                          {% if sensors is mapping %}
+                            {% for s in sensors.keys() %}
+                              - {{ state_attr(s, 'friendly_name') | default(s) }}
+                            {% endfor %}
+                          {% elif sensors is iterable and sensors | length > 0 %}
+                            {% for s in sensors %}
+                              - {{ state_attr(s, 'friendly_name') | default(s) }}
+                            {% endfor %}
+                          {% endif %}
+                        {% else %}
+                          The alarm failed to arm because sensors were open.
+                        {% endif %}
+                      {% endif %}
+                    data:
+                      tag: alarm_status
+                      sticky: true
+                      importance: high
+                      priority: high
+                      ttl: 0
+                      actions:
+                        - action: "FORCE_ARM_{{ cmd }}"
+                          title: "Force Arm"
+                        - action: "RETRY_ARM_{{ cmd }}"
+                          title: "Retry"
+                        - action: CANCEL_ARM
+                          title: "Cancel"
+                      channel: Alarm Open Sensors
+                      color: "#FF9800"
+                      notification_icon: mdi:alert-circle
+                      push:
+                        thread-id: "alarm_status"
+                        apns-collapse-id: "alarm_status"
+
+      # --- ALARM PENDING (ENTRY DELAY) ---
+      - conditions:
+          - condition: template
+            value_template: "{{ notify_devices is iterable and notify_devices | length > 0 }}"
+          - condition: trigger
+            id:
+              - alarmo_state_change
+              - notification_cleared
+          - condition: state
+            entity_id: !input alarm
+            state: pending
+        sequence:
+          - repeat:
+              for_each: !input notify_devices
+              sequence:
+                - action: >-
+                    {% if repeat.item.startswith('notify.mobile_app_') %}
+                      {{ repeat.item }}
+                    {% else %}
+                      notify.mobile_app_{{ repeat.item.split('.')[1] }}
+                    {% endif %}
+                  data:
+                    title: "ALARM ENTRY DELAY"
+                    message: "The alarm is pending. Please disarm."
+                    data:
+                      tag: alarm_status
+                      sticky: true
+                      importance: high
+                      priority: high
+                      ttl: 0
+                      actions:
+                        - action: DISARM_ALARM
+                          title: "Disarm"
+                      channel: Alarm Armed
+                      color: "#FF9800"
+                      notification_icon: mdi:shield-sync
+                      push:
+                        thread-id: "alarm_status"
+                        apns-collapse-id: "alarm_status"
+
+      # --- ALARM TRIGGERED ---
+      - conditions:
+          - condition: template
+            value_template: "{{ notify_devices is iterable and notify_devices | length > 0 }}"
+          - condition: trigger
+            id:
+              - alarmo_state_change
+              - notification_cleared
+          - condition: state
+            entity_id: !input alarm
+            state: triggered
+        sequence:
+          - repeat:
+              for_each: !input notify_devices
+              sequence:
+                - action: >-
+                    {% if repeat.item.startswith('notify.mobile_app_') %}
+                      {{ repeat.item }}
+                    {% else %}
+                      notify.mobile_app_{{ repeat.item.split('.')[1] }}
+                    {% endif %}
+                  data:
+                    title: "ALARM TRIGGERED"
+                    message: "Detection: {{ state_attr(alarm_entity, 'changed_by') | default('Unknown') }}"
+                    data:
+                      tag: alarm_status
+                      sticky: true
+                      importance: high
+                      priority: high
+                      ttl: 0
+                      actions:
+                        - action: DISARM_ALARM
+                          title: "Disarm"
+                      channel: Alarm Triggered
+                      color: "#F44336"
+                      notification_icon: mdi:alarm-light
+                      vibrationPattern: "200, 1000, 200, 1000, 200, 1000, 200, 1000"
+                      push:
+                        thread-id: "alarm_status"
+                        apns-collapse-id: "alarm_status"
+                        sound:
+                          name: default
+                          critical: 1
+                          volume: 1.0
+
+      # --- ALARM ARMING ---
+      - conditions:
+          - condition: template
+            value_template: "{{ notify_devices is iterable and notify_devices | length > 0 }}"
+          - condition: trigger
+            id:
+              - alarmo_state_change
+              - notification_cleared
+          - condition: state
+            entity_id: !input alarm
+            state: arming
+        sequence:
+          - repeat:
+              for_each: !input notify_devices
+              sequence:
+                - action: >-
+                    {% if repeat.item.startswith('notify.mobile_app_') %}
+                      {{ repeat.item }}
+                    {% else %}
+                      notify.mobile_app_{{ repeat.item.split('.')[1] }}
+                    {% endif %}
+                  data:
+                    title: "ALARM ARMING"
+                    message: "The alarm is arming..."
+                    data:
+                      tag: alarm_status
+                      sticky: true
+                      importance: high
+                      priority: high
+                      ttl: 0
+                      actions:
+                        - action: DISARM_ALARM
+                          title: "Cancel"
+                      channel: Alarm Armed
+                      color: "#FF9800"
+                      notification_icon: mdi:shield-sync
+                      push:
+                        thread-id: "alarm_status"
+                        apns-collapse-id: "alarm_status"
+
+      # --- ALARM ARMED ---
+      - conditions:
+          - condition: template
+            value_template: "{{ notify_devices is iterable and notify_devices | length > 0 }}"
+          - condition: trigger
+            id:
+              - alarmo_state_change
+              - notification_cleared
+          - condition: state
+            entity_id: !input alarm
+            state:
+              - armed_home
+              - armed_away
+              - armed_night
+              - armed_vacation
+              - armed_custom_bypass
+        sequence:
+          - repeat:
+              for_each: !input notify_devices
+              sequence:
+                - action: >-
+                    {% if repeat.item.startswith('notify.mobile_app_') %}
+                      {{ repeat.item }}
+                    {% else %}
+                      notify.mobile_app_{{ repeat.item.split('.')[1] }}
+                    {% endif %}
+                  data:
+                    title: >-
+                      ALARM {{ states(alarm_entity) | replace('_', ' ') | upper }}
+                      {%- if state_attr(alarm_entity, 'bypassed_sensors') %} (BYPASSED){% endif %}
+                    message: >-
+                      Mode: {{ state_attr(alarm_entity, 'arm_mode') | default(states(alarm_entity)) | replace('_', ' ') | title }}
+                      {%- set bypassed = state_attr(alarm_entity, 'bypassed_sensors') %}
+                      {%- if bypassed %}
+
+                      Bypassed Sensors:
+                      {%- if bypassed is mapping %}
+                        {%- for s in bypassed.keys() %}
+                      - {{ state_attr(s, 'friendly_name') | default(s) }}
+                        {%- endfor %}
+                      {%- elif bypassed is iterable and bypassed | length > 0 %}
+                        {%- for s in bypassed %}
+                      - {{ state_attr(s, 'friendly_name') | default(s) }}
+                        {%- endfor %}
+                      {%- endif %}
+                      {%- endif %}
+                    data:
+                      tag: alarm_status
+                      sticky: true
+                      importance: high
+                      priority: high
+                      ttl: 0
+                      actions:
+                        - action: DISARM_ALARM
+                          title: "Disarm"
+                      channel: Alarm Armed
+                      color: >-
+                        {{ '#FFEB3B' if state_attr(alarm_entity, 'bypassed_sensors') else '#4CAF50' }}
+                      notification_icon: >-
+                        {% if is_state(alarm_entity, 'armed_home') %}
+                          mdi:shield-home
+                        {% elif is_state(alarm_entity, 'armed_away') %}
+                          mdi:shield-lock
+                        {% else %}
+                          mdi:shield
+                        {% endif %}
+                      push:
+                        thread-id: "alarm_status"
+                        apns-collapse-id: "alarm_status"
+
+      # --- ALARM DISARMED ---
+      - conditions:
+          - condition: template
+            value_template: "{{ notify_devices is iterable and notify_devices | length > 0 }}"
+          - condition: trigger
+            id:
+              - alarmo_state_change
+              - notification_cleared
+              - action_cancel_arm
+          - condition: state
+            entity_id: !input alarm
+            state: disarmed
+          - condition: template
+            value_template: >-
+              {{ 
+                trigger.id in ['alarmo_state_change', 'action_cancel_arm'] 
+                or 
+                (trigger.id == 'notification_cleared' and 'FORCE_ARM' not in trigger.event.data.get('action_1_key', '')) 
+              }}
+          - condition: template
+            value_template: >-
+              {{ 
+                trigger.id == 'action_cancel_arm' 
+                or 
+                state_attr(alarm_entity, 'open_sensors') == none 
+                or 
+                state_attr(alarm_entity, 'open_sensors') | length == 0 
+              }}
+        sequence:
+          - repeat:
+              for_each: !input notify_devices
+              sequence:
+                - action: >-
+                    {% if repeat.item.startswith('notify.mobile_app_') %}
+                      {{ repeat.item }}
+                    {% else %}
+                      notify.mobile_app_{{ repeat.item.split('.')[1] }}
+                    {% endif %}
+                  data:
+                    message: "clear_notification"
+                    data:
+                      tag: alarm_status
+                - action: >-
+                    {% if repeat.item.startswith('notify.mobile_app_') %}
+                      {{ repeat.item }}
+                    {% else %}
+                      notify.mobile_app_{{ repeat.item.split('.')[1] }}
+                    {% endif %}
+                  data:
+                    title: "ALARM DISARMED"
+                    message: "The alarm is currently turned off."
+                    data:
+                      tag: alarm_status
+                      sticky: false
+                      importance: high
+                      priority: high
+                      ttl: 0
+                      actions:
+                        - action: ARM_ALARM_HOME
+                          title: "Arm {{ keypad_arm_home_mapping | title }}"
+                        - action: ARM_ALARM_AWAY
+                          title: "Arm {{ keypad_arm_away_mapping | title }}"
+                      channel: Alarm Disarmed
+                      color: "#2196F3"
+                      notification_icon: mdi:shield-off
+                      push:
+                        thread-id: "alarm_status"
+                        apns-collapse-id: "alarm_status"
+
+      # --- ACTION: DISARM ALARM ---
+      - conditions:
+          - condition: trigger
+            id: action_disarm
+        sequence:
+          - action: alarm_control_panel.alarm_disarm
+            target:
+              entity_id: !input alarm
+            data:
+              code: !input mobile_alarm_code
+
+      # --- ACTION: ARM AWAY (MAPPED) ---
+      - conditions:
+          - condition: trigger
+            id: action_arm_away
+        sequence:
+          - action: alarmo.arm
+            target:
+              entity_id: !input alarm
+            data:
+              mode: "{{ keypad_arm_away_mapping }}"
+
+      # --- ACTION: ARM HOME (MAPPED) ---
+      - conditions:
+          - condition: trigger
+            id: action_arm_home
+        sequence:
+          - action: alarmo.arm
+            target:
+              entity_id: !input alarm
+            data:
+              mode: "{{ keypad_arm_home_mapping }}"
+
+      # --- ACTION: FORCE ARM ---
+      - conditions:
+          - condition: trigger
+            id: action_force_arm
+        sequence:
+          - action: alarmo.arm
+            target:
+              entity_id: !input alarm
+            data:
+              mode: "{{ trigger.event.data.action | replace('FORCE_ARM_', '') | lower }}"
+              force: true
+              skip_delay: true
+
+      # --- ACTION: RETRY ARM ---
+      - conditions:
+          - condition: trigger
+            id: action_retry_arm
+        sequence:
+          - action: alarmo.arm
+            target:
+              entity_id: !input alarm
+            data:
+              mode: "{{ trigger.event.data.action | replace('RETRY_ARM_', '') | lower }}"
+              force: false
+              skip_delay: false
+
+  # ==========================================
+  # BLOCK 3: AUTO FORCE ARM LOGIC
+  # ==========================================
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: need_bypass
+          - condition: template
+            value_template: "{{ auto_force_arm }}"
+        sequence:
+          - wait_for_trigger:
+              - trigger: state
+                entity_id: !input alarm
+                from: disarmed
+              - trigger: event
+                event_type: mobile_app_notification_action
+                event_data:
+                  action: CANCEL_ARM
+              - trigger: event
+                event_type: alarmo_failed_to_arm
+              - trigger: event
+                event_type: zwave_js_notification
+                event_data:
+                  command_class: 111
+                  device_id: !input keypad
+                  event_type: 3
+            timeout:
+              minutes: "{{ auto_force_arm_delay | int(5) }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ wait.trigger == none and is_state(alarm_entity, 'disarmed') }}"
+                sequence:
+                  - action: alarmo.arm
+                    target:
+                      entity_id: !input alarm
+                    data:
+                      mode: "{{ trigger.event.data.command | default('arm_away') | replace('arm_', '') | lower }}"
+                      force: true
+                      skip_delay: true
