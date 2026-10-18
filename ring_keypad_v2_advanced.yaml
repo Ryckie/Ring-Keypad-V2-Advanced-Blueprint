@@ -6,7 +6,8 @@ blueprint:
     Synchronizes a Ring Keypad V2 with Alarmo. Includes custom functionality to 
     trigger the keypad's fire/smoke alarm, CO alarm, flash the medical warning 
     light if the burglar alarm was triggered while you were away, map custom 
-    actions to physical buttons, and protect against brute-force code guessing.
+    actions to physical buttons, play selectable keypad sounds from custom
+    triggers with adjustable volume, and protect against brute-force code guessing.
 
     <details>
       <summary><b>📱 Menu: Mobile Notifications, Modes & Platform Differences (Click to expand)</b></summary>
@@ -208,6 +209,107 @@ blueprint:
       selector:
         action: {}
 
+    # --- Custom Sound Setup (Optional) ---
+    sound_slot_1_triggers:
+      name: Custom Sound Slot 1 Triggers (Optional)
+      description: Add triggers that should play this slot's sound. Leave empty to disable this slot.
+      default: []
+      selector:
+        trigger: {}
+    sound_slot_1_selection:
+      name: Custom Sound Slot 1 Sound
+      default: "100"
+      selector:
+        select:
+          options:
+            - label: "Echoing Boing Boing (Chime)"
+              value: "99"
+            - label: "Electronic Double Beep (Chime)"
+              value: "96"
+            - label: "Guitar Riff (Chime)"
+              value: "97"
+            - label: "Ring Doorbell Chime (Chime)"
+              value: "100"
+            - label: "Windchime (Chime)"
+              value: "98"
+            - label: "Soft Error Beep (Tone)"
+              value: "9"
+    sound_slot_1_volume:
+      name: Custom Sound Slot 1 Volume
+      default: 50
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: '%'
+          mode: slider
+    sound_slot_2_triggers:
+      name: Custom Sound Slot 2 Triggers (Optional)
+      description: Add triggers that should play this slot's sound. Leave empty to disable this slot.
+      default: []
+      selector:
+        trigger: {}
+    sound_slot_2_selection:
+      name: Custom Sound Slot 2 Sound
+      default: "96"
+      selector:
+        select:
+          options:
+            - label: "Echoing Boing Boing (Chime)"
+              value: "99"
+            - label: "Electronic Double Beep (Chime)"
+              value: "96"
+            - label: "Guitar Riff (Chime)"
+              value: "97"
+            - label: "Ring Doorbell Chime (Chime)"
+              value: "100"
+            - label: "Windchime (Chime)"
+              value: "98"
+            - label: "Soft Error Beep (Tone)"
+              value: "9"
+    sound_slot_2_volume:
+      name: Custom Sound Slot 2 Volume
+      default: 50
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: '%'
+          mode: slider
+    sound_slot_3_triggers:
+      name: Custom Sound Slot 3 Triggers (Optional)
+      description: Add triggers that should play this slot's sound. Leave empty to disable this slot.
+      default: []
+      selector:
+        trigger: {}
+    sound_slot_3_selection:
+      name: Custom Sound Slot 3 Sound
+      default: "97"
+      selector:
+        select:
+          options:
+            - label: "Echoing Boing Boing (Chime)"
+              value: "99"
+            - label: "Electronic Double Beep (Chime)"
+              value: "96"
+            - label: "Guitar Riff (Chime)"
+              value: "97"
+            - label: "Ring Doorbell Chime (Chime)"
+              value: "100"
+            - label: "Windchime (Chime)"
+              value: "98"
+            - label: "Soft Error Beep (Tone)"
+              value: "9"
+    sound_slot_3_volume:
+      name: Custom Sound Slot 3 Volume
+      default: 50
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: '%'
+          mode: slider
+
 mode: parallel
 max: 10
 trace:
@@ -228,6 +330,17 @@ variables:
   counter_entity: !input failed_code_counter
   max_attempts: !input max_failed_attempts
   collision_delay: !input s2_collision_delay
+  sound_slot_1_triggers: !input sound_slot_1_triggers
+  sound_slot_2_triggers: !input sound_slot_2_triggers
+  sound_slot_3_triggers: !input sound_slot_3_triggers
+  # Keep this aligned with the number of fixed triggers before the sound slots.
+  sound_trigger_base_index: 26
+  sound_slot_1_selection: !input sound_slot_1_selection
+  sound_slot_1_volume: !input sound_slot_1_volume
+  sound_slot_2_selection: !input sound_slot_2_selection
+  sound_slot_2_volume: !input sound_slot_2_volume
+  sound_slot_3_selection: !input sound_slot_3_selection
+  sound_slot_3_volume: !input sound_slot_3_volume
   formatted_delay: >
     {% set delay = state_attr(alarm_entity, 'delay') %} 
     {% set total_seconds = delay if delay is not none else 0 %} 
@@ -394,6 +507,9 @@ triggers:
     event_data:
       action: RETRY_ARM_CUSTOM_BYPASS
     id: action_retry_arm
+  - triggers: !input sound_slot_1_triggers
+  - triggers: !input sound_slot_2_triggers
+  - triggers: !input sound_slot_3_triggers
 
 conditions:
   - condition: or
@@ -410,6 +526,15 @@ conditions:
             value_template: "{{ trigger.from_state.state != trigger.to_state.state }}"
           - condition: template
             value_template: "{{ trigger.from_state.state != 'unknown' }}"
+      - condition: template
+        value_template: >-
+          {% set trigger_index = trigger.idx | int(-1) %}
+          {% set slot_1_end = sound_trigger_base_index + (sound_slot_1_triggers | length) %}
+          {% set slot_2_end = slot_1_end + (sound_slot_2_triggers | length) %}
+          {% set slot_3_end = slot_2_end + (sound_slot_3_triggers | length) %}
+          {{ (trigger_index >= sound_trigger_base_index and trigger_index < slot_1_end)
+             or (trigger_index >= slot_1_end and trigger_index < slot_2_end)
+             or (trigger_index >= slot_2_end and trigger_index < slot_3_end) }}
 
 actions:
   # ==========================================
@@ -1225,3 +1350,57 @@ actions:
                       mode: "{{ trigger.event.data.command | default('arm_away') | replace('arm_', '') | lower }}"
                       force: true
                       skip_delay: true
+  # ==========================================
+  # BLOCK 4: CUSTOM KEYPAD SOUND TRIGGERS
+  # ==========================================
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {% set trigger_index = trigger.idx | int(-1) %}
+              {% set slot_1_end = sound_trigger_base_index + (sound_slot_1_triggers | length) %}
+              {{ trigger_index >= sound_trigger_base_index and trigger_index < slot_1_end }}
+        sequence:
+          - action: zwave_js.set_value
+            target:
+              device_id: !input keypad
+            data:
+              command_class: "135"
+              endpoint: "0"
+              property: "{{ sound_slot_1_selection }}"
+              property_key: "{{ '1' if sound_slot_1_selection == '9' else '9' }}"
+              value: "{{ sound_slot_1_volume }}"
+      - conditions:
+          - condition: template
+            value_template: >-
+              {% set trigger_index = trigger.idx | int(-1) %}
+              {% set slot_1_end = sound_trigger_base_index + (sound_slot_1_triggers | length) %}
+              {% set slot_2_end = slot_1_end + (sound_slot_2_triggers | length) %}
+              {{ trigger_index >= slot_1_end and trigger_index < slot_2_end }}
+        sequence:
+          - action: zwave_js.set_value
+            target:
+              device_id: !input keypad
+            data:
+              command_class: "135"
+              endpoint: "0"
+              property: "{{ sound_slot_2_selection }}"
+              property_key: "{{ '1' if sound_slot_2_selection == '9' else '9' }}"
+              value: "{{ sound_slot_2_volume }}"
+      - conditions:
+          - condition: template
+            value_template: >-
+              {% set trigger_index = trigger.idx | int(-1) %}
+              {% set slot_2_end = sound_trigger_base_index + (sound_slot_1_triggers | length) + (sound_slot_2_triggers | length) %}
+              {% set slot_3_end = slot_2_end + (sound_slot_3_triggers | length) %}
+              {{ trigger_index >= slot_2_end and trigger_index < slot_3_end }}
+        sequence:
+          - action: zwave_js.set_value
+            target:
+              device_id: !input keypad
+            data:
+              command_class: "135"
+              endpoint: "0"
+              property: "{{ sound_slot_3_selection }}"
+              property_key: "{{ '1' if sound_slot_3_selection == '9' else '9' }}"
+              value: "{{ sound_slot_3_volume }}"

@@ -17,6 +17,7 @@ This blueprint synchronizes a Ring Keypad V2 with Home Assistant and Alarmo. It 
 - **Smart "Post-Alarm" Warning:** If your burglar alarm triggers while you are away, the siren will sound. When the alarm times out and re-arms itself (make sure this is enabled in Alarmo), the keypad will flash the **Medical button** as a silent warning/indicator. When you come home, you instantly know an incident occurred before you even enter your code!
 - **Custom Panic Buttons:** Map any Home Assistant action to the physical Fire, Police, and Medical buttons on the keypad (Requires holding the button down for 3 seconds).
 - **Local Panic Sirens:** Independent toggles allow you to choose whether holding a panic button also activates the keypad's internal siren/flashing lights, turning it into a true standalone panic station.
+- **Custom Keypad Sounds (Optional):** Set up to three independent trigger-to-sound mappings, each with its own Ring Keypad chime or tone and volume. Leave any slot's trigger list empty to disable it.
 - **Instant Silence "Kill-Switch":** Typing your code and pressing 'Disarm' will instantly force the keypad to silence any sounding sirens, regardless of the current state of Alarmo.
 - **Brute Force Protection:** Triggers the burglar alarm if someone tries to guess your PIN and fails too many times while the system is armed.
 
@@ -30,6 +31,8 @@ A huge thank you to [ImSorryButWho](https://github.com/ImSorryButWho/HomeAssista
 2. [Alarmo](https://github.com/nielsfaber/alarmo) installed and configured in Home Assistant. (If you use environmental sensors, be sure to add them to Alarmo's environmental category too).
 3. Alarmo "Disarm after triggering" option **disabled**.
 4. **Counter Helper (Optional):** If you wish to use the Brute Force Protection feature, you must create a Counter helper in Home Assistant (instructions below).
+
+To configure custom sounds, add your triggers to **Custom Sound Slot 1**, **2**, or **3**, then set that slot's sound and volume. The blueprint routes triggers based on which slot they are configured in, so you do not need to assign trigger IDs. Leave unused trigger lists empty. You can assign multiple triggers to the same slot to play the same sound for each.
 
 ## 🚀 Installation
 
