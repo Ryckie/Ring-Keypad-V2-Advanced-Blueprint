@@ -7,7 +7,10 @@ blueprint:
     trigger the keypad's fire/smoke alarm, CO alarm, flash the medical warning 
     light if the burglar alarm was triggered while you were away, map custom 
     actions to physical buttons, play selectable keypad sounds from custom
-    triggers with adjustable volume, and protect against brute-force code guessing.
+    triggers with adjustable volume, run actions when everyone arrives or
+    leaves, automatically arm or disarm Alarmo based on presence, and protect
+    against brute-force code guessing. Presence-based Away arming works with
+    the optional open-sensor force-arm countdown.
 
     <details>
       <summary><b>📱 Menu: Mobile Notifications, Modes & Platform Differences (Click to expand)</b></summary>
@@ -105,8 +108,8 @@ blueprint:
           filter:
             - domain: notify
     mobile_alarm_code:
-      name: Mobile Action Disarm Code (Optional)
-      description: The PIN code required to disarm the alarm via the mobile notification action. Leave empty if not required.
+      name: Mobile and Presence Alarm Code (Optional)
+      description: The PIN code used for mobile notification disarming and optional presence-based arming/disarming. Leave empty if Alarmo does not require a code.
       default: ""
       selector:
         text:
@@ -205,6 +208,48 @@ blueprint:
     medical_button_action:
       name: Medical Button Action
       description: Custom Home Assistant actions to run when the Medical button is held.
+      default: []
+      selector:
+        action: {}
+
+    # --- Presence-Based Actions (Optional) ---
+    presence_people:
+      name: People to Track (Optional)
+      description: Select the people whose arrivals and departures should trigger the actions below. Leave empty to disable presence-based actions.
+      default: []
+      selector:
+        entity:
+          filter:
+            - domain: person
+          multiple: true
+    presence_zone:
+      name: Presence Zone
+      description: The zone the selected people must enter or leave.
+      default: zone.home
+      selector:
+        entity:
+          domain: zone
+    presence_auto_arm_away:
+      name: Automatically Arm Away When Everyone Leaves
+      description: Start a normal Away arm when all selected people leave the zone, but only if Alarmo is currently disarmed. If open sensors block arming, the existing Auto Force Arm on Open Sensors setting controls whether its countdown starts and force-arms if the sensors remain open.
+      default: false
+      selector:
+        boolean: {}
+    presence_auto_disarm_on_arrival:
+      name: Automatically Disarm When Everyone Arrives
+      description: Disarm Alarmo when all selected people enter the zone, but only if the current Alarmo state is armed.
+      default: false
+      selector:
+        boolean: {}
+    presence_home_actions:
+      name: Everyone Arrives Actions (Optional)
+      description: Custom Home Assistant actions to run when all selected people enter the zone.
+      default: []
+      selector:
+        action: {}
+    presence_away_actions:
+      name: Everyone Leaves Actions (Optional)
+      description: Custom Home Assistant actions to run when all selected people leave the zone.
       default: []
       selector:
         action: {}
@@ -335,12 +380,20 @@ variables:
   sound_slot_3_triggers: !input sound_slot_3_triggers
   # Keep this aligned with the number of fixed triggers before the sound slots.
   sound_trigger_base_index: 26
+  presence_trigger_base_index: >-
+    {{ sound_trigger_base_index
+      + (sound_slot_1_triggers | length)
+      + (sound_slot_2_triggers | length)
+      + (sound_slot_3_triggers | length) }}
   sound_slot_1_selection: !input sound_slot_1_selection
   sound_slot_1_volume: !input sound_slot_1_volume
   sound_slot_2_selection: !input sound_slot_2_selection
   sound_slot_2_volume: !input sound_slot_2_volume
   sound_slot_3_selection: !input sound_slot_3_selection
   sound_slot_3_volume: !input sound_slot_3_volume
+  presence_people: !input presence_people
+  presence_auto_arm_away: !input presence_auto_arm_away
+  presence_auto_disarm_on_arrival: !input presence_auto_disarm_on_arrival
   formatted_delay: >
     {% set delay = state_attr(alarm_entity, 'delay') %} 
     {% set total_seconds = delay if delay is not none else 0 %} 
@@ -510,6 +563,20 @@ triggers:
   - triggers: !input sound_slot_1_triggers
   - triggers: !input sound_slot_2_triggers
   - triggers: !input sound_slot_3_triggers
+  - trigger: zone.entered
+    target:
+      entity_id: !input presence_people
+    options:
+      zone: !input presence_zone
+      behavior: all
+    id: presence_all_home
+  - trigger: zone.left
+    target:
+      entity_id: !input presence_people
+    options:
+      zone: !input presence_zone
+      behavior: all
+    id: presence_all_away
 
 conditions:
   - condition: or
@@ -535,6 +602,13 @@ conditions:
           {{ (trigger_index >= sound_trigger_base_index and trigger_index < slot_1_end)
              or (trigger_index >= slot_1_end and trigger_index < slot_2_end)
              or (trigger_index >= slot_2_end and trigger_index < slot_3_end) }}
+      - condition: template
+        value_template: >-
+          {{ presence_people | length > 0
+             and trigger.idx | int(-1) in [
+               presence_trigger_base_index | int,
+               (presence_trigger_base_index | int) + 1
+             ] }}
 
 actions:
   # ==========================================
@@ -1404,3 +1478,51 @@ actions:
               property: "{{ sound_slot_3_selection }}"
               property_key: "{{ '1' if sound_slot_3_selection == '9' else '9' }}"
               value: "{{ sound_slot_3_volume }}"
+  # ==========================================
+  # BLOCK 5: PRESENCE-BASED ACTIONS
+  # ==========================================
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.idx | int(-1) == (presence_trigger_base_index | int) + 1 }}"
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ presence_auto_arm_away and is_state(alarm_entity, 'disarmed') }}"
+                sequence:
+                  - action: alarmo.arm
+                    target:
+                      entity_id: !input alarm
+                    data:
+                      mode: away
+                      force: false
+                      code: !input mobile_alarm_code
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "true"
+                sequence: !input presence_away_actions
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.idx | int(-1) == (presence_trigger_base_index | int) }}"
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: >-
+                      {{ presence_auto_disarm_on_arrival and states(alarm_entity) in [
+                        'armed_home', 'armed_away', 'armed_night', 'armed_vacation',
+                        'armed_custom_bypass'
+                      ] }}
+                sequence:
+                  - action: alarmo.disarm
+                    target:
+                      entity_id: !input alarm
+                    data:
+                      code: !input mobile_alarm_code
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "true"
+                sequence: !input presence_home_actions
