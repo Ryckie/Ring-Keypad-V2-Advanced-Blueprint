@@ -475,9 +475,9 @@ triggers:
       - armed_custom_bypass
       - triggered
     id: alarmo_state_change
-  - trigger: template
-    value_template: >
-      {{ expand(environmental_entities) | selectattr('state', 'eq', 'on') | list | length > 0 if environmental_entities else false }}
+  - trigger: state
+    entity_id: !input environmental_sensors
+    to: "on"
     id: environmental_triggered
 
   # --- Mobile App Notification Triggers ---
