@@ -35,7 +35,7 @@ A huge thank you to [ImSorryButWho](https://github.com/ImSorryButWho/HomeAssista
 
 The easiest way to install this blueprint is by clicking the import button below:
 
-[![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FRyckie%2FRing-Keypad-V2-Advanced-Blueprint%2Fblob%2Fmain%2Fring_keypad_v2.yaml)
+[![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FRyckie%2FRing-Keypad-V2-Advanced-Blueprint%2Fblob%2Fmain%2Fring_keypad_v2_advanced.yaml)
 
 **Manual installation:**
 If you prefer to install it manually:
