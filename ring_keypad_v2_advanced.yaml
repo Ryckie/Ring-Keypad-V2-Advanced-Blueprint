@@ -11,349 +11,387 @@ blueprint:
     leaves, automatically arm or disarm Alarmo based on presence, and protect
     against brute-force code guessing. Presence-based Away arming works with
     the optional open-sensor force-arm countdown.
-
-    <details>
-      <summary><b>📱 Menu: Mobile Notifications, Modes & Platform Differences (Click to expand)</b></summary>
-      
-      **Alarm Modes & Android Notification Channels:**
-      *   **Triggered:** Intrusion detected. Uses the `Alarm Triggered` channel.
-      *   **Arming:** Exit delay countdown. Uses the `Alarm Armed` channel.
-      *   **Armed:** System is fully secured (Home, Away, Night, Vacation). Uses the `Alarm Armed` channel.
-      *   **Pending:** Entry delay countdown. Uses the `Alarm Armed` channel.
-      *   **Disarmed:** System is turned off. Uses the `Alarm Disarmed` channel.
-      *   **Open Sensors:** Arming failed due to open sensors. Uses the `Alarm Open Sensors` channel.
-
-      **What is a Channel? (Android Only)**
-      *   A **channel** is a category of notifications. Android allows you to customize the behavior of each channel individually. 
-      *   By navigating to your phone's system settings (**Settings > Apps > Home Assistant > Notifications**), you can manually change the sound, vibration pattern, lock screen visibility, and priority for each specific channel, or disable a specific channel entirely without affecting the others.
-      
-      **Persistent Resend Feature:**
-      *   If a user forcefully dismisses (swipes away) the notification, Home Assistant will detect the clear event and immediately resend the notification to all selected devices.
-      *   *Note: Android reliably reports clear events. iOS is highly restrictive and may occasionally block background apps from reporting notification dismissals.*
-      
-      **Platform Compatibility:**
-      *   **Android:** Fully supports Custom Channels, UI Colors, dynamic Status Icons, and custom Vibration Patterns. Action buttons display instantly beneath the notification.
-      *   **iOS:** Apple ignores Android-specific visual parameters (colors, icons, vibrations). iOS uses `thread-id` and `apns-collapse-id` to group and replace notifications. **Note:** On iOS, you must long-press or pull down the notification to reveal the action buttons.
-    </details>
   domain: automation
   input:
-    # --- Keypad Setup ---
-    keypad:
-      name: Ring Keypad Device
-      description: The Z-Wave device for your Ring Keypad V2. (MUST be paired with S2 Security!)
-      selector:
-        device:
-          integration: zwave_js
-    keypad_arm_home_mapping:
-      name: 'Ring Keypad: "Arm Home" button'
-      description: The <a href="https://github.com/nielsfaber/alarmo#arm-modes">Alarmo mode</a> this keypad button maps to.
-      selector:
-        select:
-          options:
-            - label: Home
-              value: home
-            - label: Away
-              value: away
-            - label: Night
-              value: night
-            - label: Vacation
-              value: vacation
-            - label: Custom
-              value: custom
-    keypad_arm_away_mapping:
-      name: 'Ring Keypad: "Arm Away" button'
-      description: The <a href="https://github.com/nielsfaber/alarmo#arm-modes">Alarmo mode</a> this keypad button maps to.
-      selector:
-        select:
-          options:
-            - label: Home
-              value: home
-            - label: Away
-              value: away
-            - label: Night
-              value: night
-            - label: Vacation
-              value: vacation
-            - label: Custom
-              value: custom
-    alarm:
-      name: Alarmo Entity
-      description: Your Alarmo control panel entity.
-      selector:
-        entity:
-          domain: alarm_control_panel
-    environmental_sensors:
-      name: Environmental Sensors (Optional)
-      description: Select your smoke, carbon monoxide, moisture/water, gas, or heat detectors. If any of these trigger, the keypad will sound the loud fire alarm.
-      default: []
-      selector:
-        entity:
-          domain: binary_sensor
-          device_class:
-            - smoke
-            - carbon_monoxide
-            - moisture
-            - gas
-            - heat
-          multiple: true
+    # ==========================================
+    # SECTION 1: CORE KEYPAD & ALARMO SETUP
+    # ==========================================
+    keypad_setup_section:
+      name: Core Keypad & Alarmo Setup
+      icon: mdi:dialpad
+      collapsed: false
+      input:
+        keypad:
+          name: Ring Keypad Device
+          description: The Z-Wave device for your Ring Keypad V2. (MUST be paired with S2 Security!)
+          selector:
+            device:
+              integration: zwave_js
+        alarm:
+          name: Alarmo Entity
+          description: Your Alarmo control panel entity.
+          selector:
+            entity:
+              domain: alarm_control_panel
+        keypad_arm_home_mapping:
+          name: 'Ring Keypad: "Arm Home" button'
+          description: The <a href="https://github.com/nielsfaber/alarmo#arm-modes">Alarmo mode</a> this keypad button maps to.
+          default: home
+          selector:
+            select:
+              options:
+                - label: Home
+                  value: home
+                - label: Away
+                  value: away
+                - label: Night
+                  value: night
+                - label: Vacation
+                  value: vacation
+                - label: Custom
+                  value: custom
+        keypad_arm_away_mapping:
+          name: 'Ring Keypad: "Arm Away" button'
+          description: The <a href="https://github.com/nielsfaber/alarmo#arm-modes">Alarmo mode</a> this keypad button maps to.
+          default: away
+          selector:
+            select:
+              options:
+                - label: Home
+                  value: home
+                - label: Away
+                  value: away
+                - label: Night
+                  value: night
+                - label: Vacation
+                  value: vacation
+                - label: Custom
+                  value: custom
+        environmental_sensors:
+          name: Environmental Sensors (Optional)
+          description: Select your smoke, carbon monoxide, moisture/water, gas, or heat detectors. If any of these trigger, the keypad will sound the loud fire alarm.
+          default: []
+          selector:
+            entity:
+              domain: binary_sensor
+              device_class:
+                - smoke
+                - carbon_monoxide
+                - moisture
+                - gas
+                - heat
+              multiple: true
 
-    # --- Mobile App Notification Setup ---
-    notify_devices:
-      name: Mobile Devices to Notify (Optional)
-      description: Select one or more mobile app notify entities to receive actionable notifications. Leave empty to disable notifications.
-      default: []
-      selector:
-        entity:
-          multiple: true
-          filter:
-            - domain: notify
-    mobile_alarm_code:
-      name: Mobile and Presence Alarm Code (Optional)
-      description: The PIN code used for mobile notification disarming and optional presence-based arming/disarming. Leave empty if Alarmo does not require a code.
-      default: ""
-      selector:
-        text:
-          type: password
-
-    # --- Security Setup ---
-    brute_force_toggle:
-      name: Brute Force Protection (Invalid Codes)
-      description: Trigger the burglar alarm if too many incorrect codes are entered while the system is Armed.
-      default: false
-      selector:
-        boolean: {}
-    failed_code_counter:
-      name: Failed Code Counter Helper
-      description: Create a Helper (Settings > Devices & Services > Helpers > Create Helper > Counter) and select it here. Required if Brute Force Protection is on.
-      default: ""
-      selector:
-        entity:
-          domain: counter
-    max_failed_attempts:
-      name: Max Failed Attempts
-      description: How many wrong codes before the alarm triggers?
-      default: 3
-      selector:
-        number:
-          min: 1
-          max: 10
-          step: 1
-
-    # --- Auto Force Arm Setup ---
-    auto_force_arm_toggle:
-      name: Auto Force Arm on Open Sensors
-      description: Automatically bypass open sensors and force arm the system if left unresolved.
-      default: false
-      selector:
-        boolean: {}
-    auto_force_arm_delay:
-      name: Auto Force Arm Delay
-      description: How many minutes to wait before automatically force arming? (Only active if toggle above is true)
-      default: 5
-      selector:
-        number:
-          min: 1
-          max: 60
-          step: 1
-          unit_of_measurement: minutes
-
-    # --- Workaround for Z-Wave JS S2 collision issue #4 ---
-    s2_collision_delay:
-      name: S2 Security Collision Delay (Disarm)
+    # ==========================================
+    # SECTION 2: MOBILE APP NOTIFICATIONS
+    # ==========================================
+    mobile_notifications_section:
+      name: Mobile App Notifications (Optional)
+      icon: mdi:cellphone-message
+      collapsed: true
       description: >
-        If your keypad flashes the red network symbol and fails to update its status when disarming. Adding a delay (1-3 seconds) allows the keypad's S2 security handshake to finish first. 0 disables the delay.
-      default: 0
-      selector:
-        number:
-          min: 0
-          max: 3
-          step: 1
-          unit_of_measurement: seconds
+        Configure actionable notifications for Android and iOS devices.
+        
+        <details>
+          <summary><b>📱 Menu: Mobile Notifications, Modes & Platform Differences (Click to expand)</b></summary>
+          
+          **Alarm Modes & Android Notification Channels:**
+          - **Triggered:** Intrusion detected. Uses the `Alarm Triggered` channel.
+          - **Arming:** Exit delay countdown. Uses the `Alarm Armed` channel.
+          - **Armed:** System is fully secured (Home, Away, Night, Vacation). Uses the `Alarm Armed` channel.
+          - **Pending:** Entry delay countdown. Uses the `Alarm Armed` channel.
+          - **Disarmed:** System is turned off. Uses the `Alarm Disarmed` channel.
+          - **Open Sensors:** Arming failed due to open sensors. Uses the `Alarm Open Sensors` channel.
 
-    # --- Fire Button Setup ---
-    fire_button_local_alarm:
-      name: Local Siren for Fire Button
-      description: Toggle to activate the keypad's internal loud Fire siren when the Fire button is held.
-      default: false
-      selector:
-        boolean: {}
-    fire_button_action:
-      name: Fire Button Action
-      description: Custom Home Assistant actions to run when the Fire button is held.
-      default: []
-      selector:
-        action: {}
+          **What is a Channel? (Android Only)**
+          - A **channel** is a category of notifications. Android allows you to customize the behavior of each channel individually. 
+          - By navigating to your phone's system settings (**Settings > Apps > Home Assistant > Notifications**), you can manually change the sound, vibration pattern, lock screen visibility, and priority for each specific channel, or disable a specific channel entirely without affecting the others.
+          
+          **Persistent Resend Feature:**
+          - If a user forcefully dismisses (swipes away) the notification, Home Assistant will detect the clear event and immediately resend the notification to all selected devices.
+          - *Note: Android reliably reports clear events. iOS is highly restrictive and may occasionally block background apps from reporting notification dismissals.*
+          
+          **Platform Compatibility:**
+          - **Android:** Fully supports Custom Channels, UI Colors, dynamic Status Icons, and custom Vibration Patterns. Action buttons display instantly beneath the notification.
+          - **iOS:** Apple ignores Android-specific visual parameters (colors, icons, vibrations). iOS uses `thread-id` and `apns-collapse-id` to group and replace notifications. **Note:** On iOS, you must long-press or pull down the notification to reveal the action buttons.
+        </details>
+      input:
+        notify_devices:
+          name: Mobile Devices to Notify (Optional)
+          description: Select one or more mobile app notify entities to receive actionable notifications. Leave empty to disable notifications.
+          default: []
+          selector:
+            entity:
+              multiple: true
+              filter:
+                - domain: notify
+        mobile_alarm_code:
+          name: Mobile and Presence Alarm Code (Optional)
+          description: The PIN code used for mobile notification disarming and optional presence-based arming/disarming. Leave empty if Alarmo does not require a code.
+          default: ""
+          selector:
+            text:
+              type: password
 
-    # --- Police Button Setup ---
-    police_button_local_alarm:
-      name: Local Siren for Police Button
-      description: Toggle to activate the keypad's internal loud Burglar siren when the Police button is held.
-      default: false
-      selector:
-        boolean: {}
-    police_button_action:
-      name: Police Button Action
-      description: Custom Home Assistant actions to run when the Police button is held.
-      default: []
-      selector:
-        action: {}
+    # ==========================================
+    # SECTION 3: SECURITY, BYPASS & Z-WAVE TUNING
+    # ==========================================
+    security_and_bypass_section:
+      name: Security, Auto-Bypass & Z-Wave Tuning (Optional)
+      icon: mdi:shield-lock-outline
+      collapsed: true
+      input:
+        brute_force_toggle:
+          name: Brute Force Protection (Invalid Codes)
+          description: Trigger the burglar alarm if too many incorrect codes are entered while the system is Armed.
+          default: false
+          selector:
+            boolean: {}
+        failed_code_counter:
+          name: Failed Code Counter Helper
+          description: Create a Helper (Settings > Devices & Services > Helpers > Create Helper > Counter) and select it here. Required if Brute Force Protection is on.
+          default: ""
+          selector:
+            entity:
+              domain: counter
+        max_failed_attempts:
+          name: Max Failed Attempts
+          description: How many wrong codes before the alarm triggers?
+          default: 3
+          selector:
+            number:
+              min: 1
+              max: 10
+              step: 1
+        auto_force_arm_toggle:
+          name: Auto Force Arm on Open Sensors
+          description: Automatically bypass open sensors and force arm the system if left unresolved.
+          default: false
+          selector:
+            boolean: {}
+        auto_force_arm_delay:
+          name: Auto Force Arm Delay
+          description: How many minutes to wait before automatically force arming? (Only active if toggle above is true)
+          default: 5
+          selector:
+            number:
+              min: 1
+              max: 60
+              step: 1
+              unit_of_measurement: minutes
+        s2_collision_delay:
+          name: S2 Security Collision Delay (Disarm)
+          description: >
+            If your keypad flashes the red network symbol and fails to update its status when disarming. Adding a delay (1-3 seconds) allows the keypad's S2 security handshake to finish first. 0 disables the delay.
+          default: 0
+          selector:
+            number:
+              min: 0
+              max: 3
+              step: 1
+              unit_of_measurement: seconds
 
-    # --- Medical Button Setup ---
-    medical_button_local_alarm:
-      name: Local Flashing for Medical Button
-      description: Toggle to activate the keypad's internal Medical flashing light when the Medical button is held.
-      default: false
-      selector:
-        boolean: {}
-    medical_button_action:
-      name: Medical Button Action
-      description: Custom Home Assistant actions to run when the Medical button is held.
-      default: []
-      selector:
-        action: {}
+    # ==========================================
+    # SECTION 4: EMERGENCY PANIC BUTTONS
+    # ==========================================
+    emergency_buttons_section:
+      name: Emergency Buttons - Fire, Police, Medical (Optional)
+      icon: mdi:alarm-light-outline
+      collapsed: true
+      input:
+        fire_button_local_alarm:
+          name: Local Siren for Fire Button
+          description: Toggle to activate the keypad's internal loud Fire siren when the Fire button is held.
+          default: false
+          selector:
+            boolean: {}
+        fire_button_action:
+          name: Fire Button Action
+          description: Custom Home Assistant actions to run when the Fire button is held.
+          default: []
+          selector:
+            action: {}
+        police_button_local_alarm:
+          name: Local Siren for Police Button
+          description: Toggle to activate the keypad's internal loud Burglar siren when the Police button is held.
+          default: false
+          selector:
+            boolean: {}
+        police_button_action:
+          name: Police Button Action
+          description: Custom Home Assistant actions to run when the Police button is held.
+          default: []
+          selector:
+            action: {}
+        medical_button_local_alarm:
+          name: Local Flashing for Medical Button
+          description: Toggle to activate the keypad's internal Medical flashing light when the Medical button is held.
+          default: false
+          selector:
+            boolean: {}
+        medical_button_action:
+          name: Medical Button Action
+          description: Custom Home Assistant actions to run when the Medical button is held.
+          default: []
+          selector:
+            action: {}
 
-    # --- Presence-Based Actions (Optional) ---
-    presence_people:
-      name: People to Track (Optional)
-      description: Select the people whose arrivals and departures should trigger the actions below. Leave empty to disable presence-based actions.
-      default: []
-      selector:
-        entity:
-          filter:
-            - domain: person
-          multiple: true
-    presence_zone:
-      name: Presence Zone
-      description: The zone the selected people must enter or leave.
-      default: zone.home
-      selector:
-        entity:
-          domain: zone
-    presence_auto_arm_away:
-      name: Automatically Arm Away When Everyone Leaves
-      description: Start a normal Away arm when all selected people leave the zone, but only if Alarmo is currently disarmed. If open sensors block arming, the existing Auto Force Arm on Open Sensors setting controls whether its countdown starts and force-arms if the sensors remain open.
-      default: false
-      selector:
-        boolean: {}
-    presence_auto_disarm_on_arrival:
-      name: Automatically Disarm When Everyone Arrives
-      description: Disarm Alarmo when all selected people enter the zone, but only if the current Alarmo state is armed.
-      default: false
-      selector:
-        boolean: {}
-    presence_home_actions:
-      name: Everyone Arrives Actions (Optional)
-      description: Custom Home Assistant actions to run when all selected people enter the zone.
-      default: []
-      selector:
-        action: {}
-    presence_away_actions:
-      name: Everyone Leaves Actions (Optional)
-      description: Custom Home Assistant actions to run when all selected people leave the zone.
-      default: []
-      selector:
-        action: {}
+    # ==========================================
+    # SECTION 5: PRESENCE-BASED AUTOMATION
+    # ==========================================
+    presence_section:
+      name: Presence-Based Actions (Optional)
+      icon: mdi:home-account
+      collapsed: true
+      input:
+        presence_people:
+          name: People to Track (Optional)
+          description: Select the people whose arrivals and departures should trigger the actions below. Leave empty to disable presence-based actions.
+          default: []
+          selector:
+            entity:
+              filter:
+                - domain: person
+              multiple: true
+        presence_zone:
+          name: Presence Zone
+          description: The zone the selected people must enter or leave.
+          default: zone.home
+          selector:
+            entity:
+              domain: zone
+        presence_auto_arm_away:
+          name: Automatically Arm Away When Everyone Leaves
+          description: Start a normal Away arm when all selected people leave the zone, but only if Alarmo is currently disarmed. If open sensors block arming, the existing Auto Force Arm on Open Sensors setting controls whether its countdown starts and force-arms if the sensors remain open.
+          default: false
+          selector:
+            boolean: {}
+        presence_auto_disarm_on_arrival:
+          name: Automatically Disarm When Everyone Arrives
+          description: Disarm Alarmo when all selected people enter the zone, but only if the current Alarmo state is armed.
+          default: false
+          selector:
+            boolean: {}
+        presence_home_actions:
+          name: Everyone Arrives Actions (Optional)
+          description: Custom Home Assistant actions to run when all selected people enter the zone.
+          default: []
+          selector:
+            action: {}
+        presence_away_actions:
+          name: Everyone Leaves Actions (Optional)
+          description: Custom Home Assistant actions to run when all selected people leave the zone.
+          default: []
+          selector:
+            action: {}
 
-    # --- Custom Sound Setup (Optional) ---
-    sound_slot_1_triggers:
-      name: Custom Sound Slot 1 Triggers (Optional)
-      description: Add triggers that should play this slot's sound. Leave empty to disable this slot.
-      default: []
-      selector:
-        trigger: {}
-    sound_slot_1_selection:
-      name: Custom Sound Slot 1 Sound
-      default: "100"
-      selector:
-        select:
-          options:
-            - label: "Echoing Boing Boing (Chime)"
-              value: "99"
-            - label: "Electronic Double Beep (Chime)"
-              value: "96"
-            - label: "Guitar Riff (Chime)"
-              value: "97"
-            - label: "Ring Doorbell Chime (Chime)"
-              value: "100"
-            - label: "Windchime (Chime)"
-              value: "98"
-            - label: "Soft Error Beep (Tone)"
-              value: "9"
-    sound_slot_1_volume:
-      name: Custom Sound Slot 1 Volume
-      default: 50
-      selector:
-        number:
-          min: 1
-          max: 100
-          unit_of_measurement: '%'
-          mode: slider
-    sound_slot_2_triggers:
-      name: Custom Sound Slot 2 Triggers (Optional)
-      description: Add triggers that should play this slot's sound. Leave empty to disable this slot.
-      default: []
-      selector:
-        trigger: {}
-    sound_slot_2_selection:
-      name: Custom Sound Slot 2 Sound
-      default: "96"
-      selector:
-        select:
-          options:
-            - label: "Echoing Boing Boing (Chime)"
-              value: "99"
-            - label: "Electronic Double Beep (Chime)"
-              value: "96"
-            - label: "Guitar Riff (Chime)"
-              value: "97"
-            - label: "Ring Doorbell Chime (Chime)"
-              value: "100"
-            - label: "Windchime (Chime)"
-              value: "98"
-            - label: "Soft Error Beep (Tone)"
-              value: "9"
-    sound_slot_2_volume:
-      name: Custom Sound Slot 2 Volume
-      default: 50
-      selector:
-        number:
-          min: 1
-          max: 100
-          unit_of_measurement: '%'
-          mode: slider
-    sound_slot_3_triggers:
-      name: Custom Sound Slot 3 Triggers (Optional)
-      description: Add triggers that should play this slot's sound. Leave empty to disable this slot.
-      default: []
-      selector:
-        trigger: {}
-    sound_slot_3_selection:
-      name: Custom Sound Slot 3 Sound
-      default: "97"
-      selector:
-        select:
-          options:
-            - label: "Echoing Boing Boing (Chime)"
-              value: "99"
-            - label: "Electronic Double Beep (Chime)"
-              value: "96"
-            - label: "Guitar Riff (Chime)"
-              value: "97"
-            - label: "Ring Doorbell Chime (Chime)"
-              value: "100"
-            - label: "Windchime (Chime)"
-              value: "98"
-            - label: "Soft Error Beep (Tone)"
-              value: "9"
-    sound_slot_3_volume:
-      name: Custom Sound Slot 3 Volume
-      default: 50
-      selector:
-        number:
-          min: 1
-          max: 100
-          unit_of_measurement: '%'
-          mode: slider
+    # ==========================================
+    # SECTION 6: CUSTOM KEYPAD CHIMES & SOUNDS
+    # ==========================================
+    custom_sounds_section:
+      name: Custom Sound Slots (Optional)
+      icon: mdi:volume-high
+      collapsed: true
+      input:
+        sound_slot_1_triggers:
+          name: Custom Sound Slot 1 Triggers (Optional)
+          description: Add triggers that should play this slot's sound. Leave empty to disable this slot.
+          default: []
+          selector:
+            trigger: {}
+        sound_slot_1_selection:
+          name: Custom Sound Slot 1 Sound
+          default: "100"
+          selector:
+            select:
+              options:
+                - label: "Echoing Boing Boing (Chime)"
+                  value: "99"
+                - label: "Electronic Double Beep (Chime)"
+                  value: "96"
+                - label: "Guitar Riff (Chime)"
+                  value: "97"
+                - label: "Ring Doorbell Chime (Chime)"
+                  value: "100"
+                - label: "Windchime (Chime)"
+                  value: "98"
+                - label: "Soft Error Beep (Tone)"
+                  value: "9"
+        sound_slot_1_volume:
+          name: Custom Sound Slot 1 Volume
+          default: 50
+          selector:
+            number:
+              min: 1
+              max: 100
+              unit_of_measurement: '%'
+              mode: slider
+        sound_slot_2_triggers:
+          name: Custom Sound Slot 2 Triggers (Optional)
+          description: Add triggers that should play this slot's sound. Leave empty to disable this slot.
+          default: []
+          selector:
+            trigger: {}
+        sound_slot_2_selection:
+          name: Custom Sound Slot 2 Sound
+          default: "96"
+          selector:
+            select:
+              options:
+                - label: "Echoing Boing Boing (Chime)"
+                  value: "99"
+                - label: "Electronic Double Beep (Chime)"
+                  value: "96"
+                - label: "Guitar Riff (Chime)"
+                  value: "97"
+                - label: "Ring Doorbell Chime (Chime)"
+                  value: "100"
+                - label: "Windchime (Chime)"
+                  value: "98"
+                - label: "Soft Error Beep (Tone)"
+                  value: "9"
+        sound_slot_2_volume:
+          name: Custom Sound Slot 2 Volume
+          default: 50
+          selector:
+            number:
+              min: 1
+              max: 100
+              unit_of_measurement: '%'
+              mode: slider
+        sound_slot_3_triggers:
+          name: Custom Sound Slot 3 Triggers (Optional)
+          description: Add triggers that should play this slot's sound. Leave empty to disable this slot.
+          default: []
+          selector:
+            trigger: {}
+        sound_slot_3_selection:
+          name: Custom Sound Slot 3 Sound
+          default: "97"
+          selector:
+            select:
+              options:
+                - label: "Echoing Boing Boing (Chime)"
+                  value: "99"
+                - label: "Electronic Double Beep (Chime)"
+                  value: "96"
+                - label: "Guitar Riff (Chime)"
+                  value: "97"
+                - label: "Ring Doorbell Chime (Chime)"
+                  value: "100"
+                - label: "Windchime (Chime)"
+                  value: "98"
+                - label: "Soft Error Beep (Tone)"
+                  value: "9"
+        sound_slot_3_volume:
+          name: Custom Sound Slot 3 Volume
+          default: 50
+          selector:
+            number:
+              min: 1
+              max: 100
+              unit_of_measurement: '%'
+              mode: slider
 
 mode: parallel
 max: 10
@@ -808,9 +846,9 @@ actions:
                               endpoint: "0"
                               method_name: set
                               parameters:
-                                - - indicatorId: 19
-                                    propertyId: 1
-                                    value: 255
+                                - indicatorId: 19
+                                  propertyId: 1
+                                  value: 255
                     default:
                       - action: zwave_js.set_value
                         target:
@@ -868,9 +906,9 @@ actions:
                       endpoint: "0"
                       method_name: set
                       parameters:
-                        - - indicatorId: 13
-                            propertyId: 1
-                            value: 255
+                        - indicatorId: 13
+                          propertyId: 1
+                          value: 255
 
       # --- Environmental Alarms ---
       - conditions:
@@ -885,9 +923,9 @@ actions:
               endpoint: "0"
               method_name: set
               parameters:
-                - - indicatorId: 14
-                    propertyId: 1
-                    value: 255
+                - indicatorId: 14
+                  propertyId: 1
+                  value: 255
 
       # --- Physical Emergency Buttons ---
 
@@ -912,9 +950,9 @@ actions:
                       endpoint: "0"
                       method_name: set
                       parameters:
-                        - - indicatorId: 14
-                            propertyId: 1
-                            value: 255
+                        - indicatorId: 14
+                          propertyId: 1
+                          value: 255
           - choose:
               - conditions:
                   - condition: template
@@ -942,9 +980,9 @@ actions:
                       endpoint: "0"
                       method_name: set
                       parameters:
-                        - - indicatorId: 13
-                            propertyId: 1
-                            value: 255
+                        - indicatorId: 13
+                          propertyId: 1
+                          value: 255
           - choose:
               - conditions:
                   - condition: template
@@ -972,9 +1010,9 @@ actions:
                       endpoint: "0"
                       method_name: set
                       parameters:
-                        - - indicatorId: 19
-                            propertyId: 1
-                            value: 255
+                        - indicatorId: 19
+                          propertyId: 1
+                          value: 255
           - choose:
               - conditions:
                   - condition: template
@@ -1424,6 +1462,7 @@ actions:
                       mode: "{{ trigger.event.data.command | default('arm_away') | replace('arm_', '') | lower }}"
                       force: true
                       skip_delay: true
+
   # ==========================================
   # BLOCK 4: CUSTOM KEYPAD SOUND TRIGGERS
   # ==========================================
@@ -1478,6 +1517,7 @@ actions:
               property: "{{ sound_slot_3_selection }}"
               property_key: "{{ '1' if sound_slot_3_selection == '9' else '9' }}"
               value: "{{ sound_slot_3_volume }}"
+
   # ==========================================
   # BLOCK 5: PRESENCE-BASED ACTIONS
   # ==========================================
